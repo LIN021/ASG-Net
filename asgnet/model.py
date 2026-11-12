@@ -4,14 +4,8 @@ from torch.nn import functional as F
 
 
 class HighPassDW3d(nn.Module):
-    """
-    固定拉普拉斯高通的 3D 深度可分离卷积。
-    优化: 使用 padding_mode='replicate' 避免边缘产生虚假高频信号。
-    """
-
     def __init__(self, channels: int):
         super().__init__()
-        # 使用 replicate padding，卷积内的 padding 设为 0
         self.pad = nn.ReplicationPad3d(1)
         self.dw = nn.Conv3d(channels, channels, kernel_size=3, padding=0, groups=channels, bias=False)
 
@@ -27,7 +21,6 @@ class HighPassDW3d(nn.Module):
         self.postnorm = nn.InstanceNorm3d(channels, affine=False)
 
     def forward(self, x):
-        # 先 padding 再卷积
         x_pad = self.pad(x)
         y = self.dw(x_pad)
         return self.postnorm(y)
@@ -36,10 +29,9 @@ class HighPassDW3d(nn.Module):
 class SRU3d(nn.Module):
     def __init__(self, oup_channels: int, group_num: int = 16, gate_treshold: float = 0.5):
         super().__init__()
-        # 自动调整 group_num 确保整除
         if oup_channels % group_num != 0:
             group_num = 1
-            while oup_channels % group_num != 0:  # 寻找最大公约数的简易逻辑，或直接设为GCD
+            while oup_channels % group_num != 0:
                 group_num += 1
 
         self.gn = nn.GroupNorm(num_channels=oup_channels, num_groups=group_num)
@@ -48,7 +40,6 @@ class SRU3d(nn.Module):
 
     def forward(self, x):
         gn_x = self.gn(x)
-        # 增加 eps 防止除零
         w_gamma = self.gn.weight / (torch.sum(self.gn.weight) + 1e-6)
         w_gamma = w_gamma.view(1, -1, 1, 1, 1)
         reweights = self.sigmoid(gn_x * w_gamma)
@@ -59,11 +50,9 @@ class SRU3d(nn.Module):
         return self.reconstruct(x_1, x_2)
 
     def reconstruct(self, x_1, x_2):
-        # 拆分重组
         c = x_1.size(1)
         if c % 2 != 0:
             return x_1 + x_2
-        # 使用 chunk 替代 split，有时效率略高
         x_11, x_12 = torch.chunk(x_1, 2, dim=1)
         x_21, x_22 = torch.chunk(x_2, 2, dim=1)
         return torch.cat([x_11 + x_22, x_12 + x_21], dim=1)
@@ -76,7 +65,6 @@ class CRU3d(nn.Module):
         self.up_channel = int(alpha * op_channel)
         self.low_channel = op_channel - self.up_channel
 
-        # 确保 squeeze 后通道不为 0
         squeeze_up = max(1, self.up_channel // squeeze_radio)
         squeeze_low = max(1, self.low_channel // squeeze_radio)
 
@@ -128,7 +116,6 @@ class SCConvUNetBlock(nn.Module):
             nn.InstanceNorm3d(dim, affine=True),
             nn.GELU()
         )
-        # 确保 group_num 合理，这里设为 min(dim, 4) 或其他逻辑
         self.sc_conv = ScConv3d(dim, group_num=min(dim, 4))
         self.activation = nn.GELU()
 
@@ -145,7 +132,7 @@ class Head_feature(nn.Module):
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv3d(in_chan, mid_chan, 3, padding=1, bias=False),
-            nn.BatchNorm3d(mid_chan),  # 注意: nnUNet 通常用 InstanceNorm，但 Head 用 BN 也可
+            nn.BatchNorm3d(mid_chan),
             nn.ReLU(inplace=True)
         )
         self.out = nn.Conv3d(mid_chan, 1, 1, bias=False)
@@ -154,7 +141,6 @@ class Head_feature(nn.Module):
         return self.out(self.conv(x))
 
 
-# -------------------- ASG Block (优化 Divergence 计算) --------------------
 class ASG_Block_SC(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -204,7 +190,6 @@ class ASG_Block_SC(nn.Module):
         return shortcut + self.final_mlp(self.norm(dynamic_features))
 
 
-# -------------------- U-Net 主干 (基本不变) --------------------
 class SGF_Module(nn.Module):
     def __init__(self, in_dim):
         super().__init__()
@@ -223,7 +208,7 @@ class SGF_Module(nn.Module):
 class Downsample(nn.Module):
     def __init__(self, in_ch, out_ch):
         super().__init__()
-        self.conv = nn.Conv3d(in_ch, out_ch, 2, 2, bias=False)  # Bias False 通常更优
+        self.conv = nn.Conv3d(in_ch, out_ch, 2, 2, bias=False)
 
     def forward(self, x):
         return self.conv(x)
@@ -250,7 +235,6 @@ class ASGNet_SC(nn.Module):
             nn.GELU()
         )
 
-        # 辅助函数：构建 ASG Block 层
         def build_layer(dim, depth):
             return nn.Sequential(*[ASG_Block_SC(dim) for _ in range(depth)])
 
@@ -280,7 +264,6 @@ class ASGNet_SC(nn.Module):
 
         self.seg_head = nn.Conv3d(c1, num_classes, 1)
 
-        # 优化点4: 缓存所有 ASG 块的引用，用于 loss 计算，避免每次 forward 遍历
         self.asg_blocks = []
         for m in self.modules():
             if isinstance(m, ASG_Block_SC):
