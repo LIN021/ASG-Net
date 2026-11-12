@@ -6,6 +6,12 @@ ASG-Net is a 3D PyTorch model for low-grade glioma segmentation from FLAIR MRI. 
 
 [Paper DOI](https://doi.org/10.1016/j.bspc.2026.111829)
 
+## Method overview
+
+![ASG-Net encoder-decoder architecture with adaptive spectral gating blocks, semantic gating fusion, and hierarchical boundary-oriented supervision](assets/asg-net-overview.png)
+
+*Figure 2 from the paper. ASG blocks process the encoder and decoder features, SGF refines the skip connections, and HBS combines the training losses.*
+
 ## Installation
 
 Install [PyTorch](https://pytorch.org/get-started/locally/) for your CPU or GPU, then run the following from the repository root. Training requires Python 3.10 or newer.
