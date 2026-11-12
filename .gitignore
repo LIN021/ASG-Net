@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+*.pth
+*.pt
+*.ckpt
+*.nii
+*.nii.gz
+nnUNet_raw/
+nnUNet_preprocessed/
+nnUNet_results/
+.env
